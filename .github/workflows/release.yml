@@ -1,0 +1,135 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    env:
+      GOTOOLCHAIN: local   # prevent downloading other toolchains
+
+    steps:
+      - name: Checkout merge commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Calculate next version
+        id: ver
+        run: |
+          set -euo pipefail
+          last=$(git tag --list 'v*' --sort=-v:refname | head -n1 || true)
+
+          if [ -z "${last:-}" ]; then
+            log=$(git log --pretty=format:'%s%n%b' || true)
+            major=0; minor=0; patch=0
+          else
+            log=$(git log --pretty=format:'%s%n%b' "${last}..HEAD" || true)
+            major=${last#v}; major=${major%%.*}
+            minor=${last#v$major.}; minor=${minor%%.*}
+            patch=${last#v$major.$minor.}
+          fi
+
+          if [ -z "$log" ]; then
+            echo "no_changes=true" >> $GITHUB_OUTPUT
+            echo "next=${last:-v0.0.0}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          bump="patch"
+          if echo "$log" | grep -Eiq '^[a-z]+(\([^)]+\))?!: ' || echo "$log" | grep -Eq '(^|\n)BREAKING CHANGE'; then
+            bump="major"
+          elif echo "$log" | grep -Eq '^feat(\([^)]+\))?: '; then
+            bump="minor"
+          fi
+
+          if [ "$bump" = "major" ]; then
+            major=$((major+1)); minor=0; patch=0
+          elif [ "$bump" = "minor" ]; then
+            minor=$((minor+1)); patch=0
+          else
+            patch=$((patch+1))
+          fi
+
+          echo "no_changes=false" >> $GITHUB_OUTPUT
+          echo "next=v${major}.${minor}.${patch}" >> $GITHUB_OUTPUT
+
+      - name: Skip if no changes
+        if: steps.ver.outputs.no_changes == 'true'
+        run: echo "No commits since last tag. Skipping release."
+
+      - name: Update README install line + commit
+        if: steps.ver.outputs.no_changes != 'true'
+        env:
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          new="${{ steps.ver.outputs.next }}"
+          sed -i -E "s#(go get github.com/yousef-muc/httpx@)(v[0-9]+\.[0-9]+\.[0-9]+|vX\.Y\.Z)#\1${new}#g" README.md
+
+          if ! git diff --quiet -- README.md; then
+            git config --global --add safe.directory "$GITHUB_WORKSPACE"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add README.md
+            git commit -m "docs: bump install line to ${new}"
+            git push origin HEAD:refs/heads/${BASE_BRANCH}
+          fi
+
+      - name: Normalize go.mod to go 1.23 on base branch
+        if: steps.ver.outputs.no_changes != 'true'
+        env:
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          git fetch origin ${BASE_BRANCH}
+          git checkout -B ${BASE_BRANCH} origin/${BASE_BRANCH}
+          go mod edit -go=1.23
+
+          if ! git diff --quiet -- go.mod; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add go.mod
+            git commit -m "build(mod): normalize go directive to 1.23 for pkg.go.dev"
+            git push origin HEAD:refs/heads/${BASE_BRANCH}
+          fi
+
+      - name: Create tag on updated base branch head and push
+        if: steps.ver.outputs.no_changes != 'true'
+        env:
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          new="${{ steps.ver.outputs.next }}"
+          git fetch origin ${BASE_BRANCH}
+          TAG_SHA=$(git rev-parse origin/${BASE_BRANCH})
+          echo "Tagging ${new} on ${TAG_SHA}"
+          git tag -a "${new}" -m "Release ${new}" "${TAG_SHA}"
+          git push origin "${new}"
+
+      - name: Create GitHub Release
+        if: steps.ver.outputs.no_changes != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.next }}
+          generate_release_notes: true
+
+      - name: Nudge Go proxy for new version
+        if: steps.ver.outputs.no_changes != 'true'
+        run: |
+          new="${{ steps.ver.outputs.next }}"
+          curl -sSfL "https://proxy.golang.org/github.com/yousef-muc/httpx/@v/${new}.info" >/dev/null
