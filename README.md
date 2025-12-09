@@ -1,4 +1,4 @@
-# token-captcha — Stateless CAPTCHA generator and verifier for Go
+# httpx - A lightweight, minimalistic HTTP client for Go
 ![Hero Image](./artifacts/general/img/stage.png)
 
 A lightweight **stateless captcha generator and verifier** written in Go.  
@@ -10,7 +10,7 @@ without any persistent storage or session handling on the server side.
 
 
 ```bash
-go get github.com/yousef-muc/token-captcha@vX.Y.Z
+go get github.com/yousef-muc/httpx@vX.Y.Z
 ```
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/yousef-muc/token-captcha.svg)](https://pkg.go.dev/github.com/yousef-muc/token-captcha) 
