@@ -3,6 +3,7 @@ package httpx
 import "net/http"
 
 type HttpClient interface {
+	SetHeaders(headers http.Header)
 	Get(string, http.Header) (*http.Response, error)
 	Post(url string, headers http.Header, body any) (*http.Response, error)
 	Put(url string, headers http.Header, body any) (*http.Response, error)
@@ -11,10 +12,15 @@ type HttpClient interface {
 }
 
 type client struct {
+	Headers http.Header
 }
 
 func New() HttpClient {
 	return &client{}
+}
+
+func (c *client) SetHeaders(headers http.Header) {
+	c.Headers = headers
 }
 
 func (c *client) Get(url string, headers http.Header) (*http.Response, error) {
