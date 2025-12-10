@@ -23,7 +23,7 @@ This library stays **zero-dependency**, fully predictable, and idiomatic.
 go get github.com/yousef-muc/httpx@vX.Y.Z
 ```
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/yousef-muc/token-captcha.svg)](https://pkg.go.dev/github.com/yousef-muc/token-captcha) 
+[![Go Reference](https://pkg.go.dev/badge/github.com/yousef-muc/httpx.svg)](https://pkg.go.dev/github.com/yousef-muc/httpx) 
 
 **Keywords:** go http client, axios for go, golang http wrapper, go fetch api, http utility
 
