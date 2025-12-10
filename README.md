@@ -20,7 +20,7 @@ This library stays **zero-dependency**, fully predictable, and idiomatic.
 
 
 ```bash
-go get github.com/yousef-muc/httpx@v0.3.2
+go get github.com/yousef-muc/httpx@v0.3.3
 ```
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/yousef-muc/httpx.svg)](https://pkg.go.dev/github.com/yousef-muc/httpx) 
