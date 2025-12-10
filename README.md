@@ -3,7 +3,17 @@
 
 A lightweight **minimalistic HTTP client** written in Go.  
 `httpx` provides a clean, minimalistic wrapper around Go's native `net/http` package—
-with support for global headers, per-request headers, timeouts and automatic JSON/XML request body encoding.
+with support for global headers, per-request headers, timeouts and automatic JSON/XML request body encoding. 
+It provides:
+
+- An **axios-style API**
+- Automatic body encoding (JSON, XML, forms, multipart)
+- Query parameters via `WithParams`
+- Global & per-request headers
+- Configurable timeouts
+- Strong response helpers (`JSON`, `Text`, `Bytes`, `XML`)
+
+This library stays **zero-dependency**, fully predictable, and idiomatic.
 
 ---
 ## 🚀 Installation
@@ -21,16 +31,17 @@ go get github.com/yousef-muc/httpx@vX.Y.Z
 ## 🧠 Overview
 
 `httpx` is a **minimalistic HTTP client** that simplifies making requests in Go.  
-It provides an ergonomic API inspired by Axios, while staying fully compatible with
+It provides an ergonomic API inspired by axios, while staying fully compatible with
 Go's standard `net/http` package.
+`httpx` aims to remove boilerplate from everyday HTTP calls while keeping the full power of `net/http`.
 
 Key concepts:
 
-- Create a client instance
-- Set optional **global headers**
-- Pass per-request headers
-- Provide a body (any type) → automatically serialized (JSON/XML)
-- Perform HTTP methods (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`)
+- Simple request API: `Get`, `Post`, `Put`, `Patch`, `Delete`
+- Options pattern for per-request configuration
+- Automatic request body encoding
+- Clean error reporting (`HttpError`)
+- Helper functions for reading responses
 
 The client remains **lightweight**, avoids unnecessary abstractions, and keeps
 full control in the developer’s hands.
@@ -38,136 +49,271 @@ full control in the developer’s hands.
 ---
 ## ⚙️ Features
 
-- 🔄 Global client headers
-- 🧩 Per-request headers with automatic merging
-- 📝 JSON & XML body serialization based on `Content-Type`
-- 🚀 Simple, clean API inspired by Axios
-- 🧪 Works seamlessly with Go's native `http.Response`
-- 🌱 Zero dependencies (uses only stdlib)
+- 🔄 Global & per-request headers
+- ❓ Optional query parameters
+- 📝 Automatic JSON / XML / Form / Multipart encoding
+- ⏱️ Request + connection timeouts
+- 🧪 Response helpers (typed decoding)
+- 🌱 Zero dependencies
 
 ---
-## 🖥️ Example: Usage in Go
 
-Below is a minimal example showing how to perform GET and POST requests.
+# 🧭 Request Options (core concept)
+
+Every request optionally accepts `Option` modifiers.
+
+### Supported options:
+
+- `WithHeaders(http.Header)`
+- `WithParams(map[string]string)`
+- `WithBody(any)`
+
+Example:
 
 ```go
-package main
-
-import (
-    "encoding/json"
-    "log"
-    "net/http"
-    "io"
-
-    "github.com/yousef-muc/httpx"
+client.Get(
+    "https://api.com/users",
+    httpx.WithParams(map[string]string{"limit": "10"}),
 )
+```
 
-func main() {
-    client := httpx.New()
+---
 
-    // Set global headers
-    defaultHeaders := make(http.Header)
-    defaultHeaders.Set("Authorization", "Bearer ABC-123")
-    client.SetHeaders(defaultHeaders)
+# 📘 Usage Examples
 
-    // --- GET request example ---
-    reqHeaders := make(http.Header)
-    reqHeaders.Set("Content-Type", "application/json")
+The following section is split into:
 
-    res, err := client.Get("https://dummyjson.com/carts", reqHeaders)
-    if err != nil { log.Fatal(err) }
-    defer res.Body.Close()
+1. **Simple (minimal) examples** – the most common usage
+2. **Advanced examples** – using headers, parameters, and bodies
 
-    body, _ := io.ReadAll(res.Body)
-    log.Println(string(body))
+---
 
+# 1️⃣ Simple Client Creation
 
-    // --- POST request example ---
-    type User struct {
-        Firstname string `json:"firstname"`
-        Lastname  string `json:"lastname"`
+### **Default client (no config)**
+
+```go
+client := httpx.New(nil)
+```
+
+### **Client with configuration**
+
+```go
+client := httpx.New(&httpx.Config{
+    RequestTimeout:     5 * time.Second,
+    ConnectionTimeout:  1 * time.Second,
+    MaxIdleConnections: 10,
+    Headers: http.Header{
+        "Authorization": []string{"Bearer TOKEN"},
+    },
+})
+```
+
+---
+
+# 2️⃣ Simple Request Examples
+
+These examples demonstrate the absolute minimum required to use each method.
+
+---
+
+## 📗 Simple GET
+
+```go
+res, err := client.Get("https://api.com/products")
+if err != nil { panic(err) }
+
+fmt.Println(client.Text(res))
+```
+
+---
+
+## 📘 Simple POST (JSON Body)
+
+```go
+body := map[string]any{"name": "John"}
+
+res, err := client.Post(
+    "https://api.com/users/add",
+    httpx.WithBody(body),
+)
+if err != nil { panic(err) }
+
+fmt.Println(client.Text(res))
+```
+
+---
+
+## 🟦 Simple PUT
+
+```go
+res, err := client.Put(
+    "https://api.com/users/1",
+    httpx.WithBody(map[string]any{"active": true}),
+)
+fmt.Println(client.Text(res))
+```
+
+---
+
+## 🟧 Simple PATCH
+
+```go
+res, err := client.Patch(
+    "https://api.com/users/1",
+    httpx.WithBody(map[string]any{"lastname": "Smith"}),
+)
+fmt.Println(client.Text(res))
+```
+
+---
+
+## 🟥 Simple DELETE
+
+```go
+res, err := client.Delete("https://api.com/users/1")
+fmt.Println(client.Text(res))
+```
+
+---
+
+# 3️⃣ Advanced Examples
+
+These examples show the full power of request options.
+
+---
+
+## 📗 GET with params + headers
+
+```go
+res, err := client.Get(
+    "https://api.com/products",
+    httpx.WithParams(map[string]string{"limit": "5"}),
+    httpx.WithHeaders(http.Header{"Accept": []string{"application/json"}}),
+)
+if err != nil { panic(err) }
+fmt.Println(client.Text(res))
+```
+
+---
+
+## 📘 POST JSON
+
+```go
+type User struct {
+    Firstname string `json:"firstname"`
+    Lastname  string `json:"lastname"`
+}
+
+res, err := client.Post(
+    "https://api.com/users/add",
+    httpx.WithBody(User{"John", "Smith"}),
+    httpx.WithHeaders(http.Header{"Content-Type": []string{"application/json"}}),
+)
+created, _ := httpx.JSON[User](res)
+fmt.Println(created)
+```
+
+---
+
+## 📙 POST Form
+
+```go
+res, err := client.Post(
+    "https://api.com/auth/login",
+    httpx.WithBody(map[string]string{
+        "username": "demo",
+        "password": "secret",
+    }),
+    httpx.WithHeaders(http.Header{"Content-Type": []string{"application/x-www-form-urlencoded"}}),
+)
+fmt.Println(client.Text(res))
+```
+
+---
+
+## 📕 POST Multipart Upload
+
+```go
+file := []byte("binary data here…")
+
+res, err := client.Post(
+    "https://api.com/upload",
+    httpx.WithBody(map[string]any{
+        "avatar": file,
+        "username": "John",
+    }),
+    httpx.WithHeaders(http.Header{"Content-Type": []string{"multipart/form-data"}}),
+)
+fmt.Println(client.Text(res))
+```
+
+---
+
+# 📦 Response Helpers
+
+### JSON (generic)
+
+```go
+user, err := httpx.JSON[User](res)
+```
+
+### JSON (struct pointer)
+
+```go
+var user User
+err := client.ReadJSON(res, &user)
+```
+
+### Text
+
+```go
+text, _ := client.Text(res)
+```
+
+### Bytes
+
+```go
+data, _ := client.Bytes(res)
+```
+
+### XML
+
+```go
+feed, _ := httpx.XML[Feed](res)
+```
+
+---
+
+# ⚠️ Error Handling (Axios-like)
+
+Non-2xx responses return a structured `HttpError`:
+
+```go
+res, err := client.Get("https://api.com/404")
+if err != nil {
+    if httpErr, ok := err.(*httpx.HttpError); ok {
+        fmt.Println(httpErr.StatusCode)
+        fmt.Println(string(httpErr.Body))
+        fmt.Println(httpErr.Method)
+        fmt.Println(httpErr.URL)
     }
-
-    user := User{Firstname: "Yousef", Lastname: "Hejazi"}
-    reqHeaders.Set("Content-Type", "application/json")
-
-    res, err = client.Post("https://dummyjson.com/carts/add", reqHeaders, user)
-    if err != nil { log.Fatal(err) }
-    defer res.Body.Close()
-
-    body, _ = io.ReadAll(res.Body)
-    log.Println(string(body))
 }
 ```
 
 ---
-## ⚙️ Header Behavior
 
-`httpx` merges **global headers** (set via `SetHeaders`) with **per-request headers**:
+# 🧩 Why httpx?
 
-- Per-request headers **override** global headers when keys match
-- Only the first value of each header key is used (simple, predictable behavior)
+`httpx` removes friction from everyday HTTP operations:
 
----
-## 📦 Automatic Body Encoding
+- No verbose boilerplate
+- No repeated marshaling logic
+- Easy header & parameter handling
+- Clean, consistent API
+- Predictable & explicit behavior
 
-`httpx` serializes request bodies based on their `Content-Type` header:
-
-| Content-Type          | Encoding Method     |
-| --------------------- | ------------------- |
-| `application/json`    | `json.Marshal`      |
-| `application/xml`     | `xml.Marshal`       |
-| *(anything else)*     | defaults to JSON    |
-
-Passing `nil` as body → sends no request body.
-
----
-## 🧾 API Reference
-
-### **Client creation**
-```go
-client := httpx.New()
-```
-
-### **Set global headers**
-```go
-client.SetHeaders(http.Header{"Authorization": []string{"Bearer XYZ"}})
-```
-
-### **Send requests**
-```go
-client.Get(url, headers)
-client.Post(url, headers, body)
-client.Put(url, headers, body)
-client.Patch(url, headers, body)
-client.Delete(url, headers)
-```
-
-All methods return:
-```go
-(*http.Response, error)
-```
-
----
-## 🔒 Notes
-
-- `httpx` does **not** replace Go's `http.Client`; it wraps it for convenience.
-- You can still modify the response, stream data, inspect headers, etc.
-- No global state — every `client` instance is isolated.
-
----
-## 🧩 Why httpx?
-
-Go's `net/http` package is powerful but verbose.
-
-`httpx` aims to:
-
-- Reduce boilerplate
-- Provide a cleaner API similar to Axios/fetch
-- Offer structured, predictable header and body behavior
-- Remain extremely lightweight and dependency-free
-
-Perfect for microservices, REST API clients, and CLI tools.
+Perfect for REST clients, CLI tools, and microservices.
 
 ---
 
