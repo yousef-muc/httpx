@@ -6,41 +6,52 @@ import (
 	"time"
 )
 
-// client is the default implementation of the Client interface.
-// It wraps Go's http.Client and holds the configuration used to
-// construct transport settings and request defaults.
+// client is the concrete implementation of the Client interface.
+// It wraps Go's http.Client and applies httpx-level configuration such as
+// connection pooling, timeouts, and global request headers.
 type client struct {
-	httpClient *http.Client
-	Config
+	httpClient *http.Client // underlying HTTP engine
+	Config                  // global configuration settings
 }
 
-// Config defines optional settings for customizing the underlying
-// HTTP client's behavior, including timeouts, connection pooling,
-// and default request headers.
+// Config defines optional settings used when constructing a new httpx client.
+// All fields are optional; zero values trigger library defaults.
+//
+// Typical usage:
+//
+//	client := httpx.New(&httpx.Config{
+//	    RequestTimeout:     5 * time.Second,
+//	    ConnectionTimeout:  1 * time.Second,
+//	    MaxIdleConnections: 10,
+//	    Headers: http.Header{
+//	        "Authorization": []string{"Bearer token"},
+//	    },
+//	})
 type Config struct {
-	// Headers are applied to every request unless overridden by per-request headers.
+	// Headers applied to every request unless overridden by per-request options.
 	Headers http.Header
 
-	// MaxIdleConnections controls how many idle TCP connections are kept per host.
-	// Higher values improve throughput in high-concurrency applications.
+	// MaxIdleConnections controls the number of idle TCP connections kept per host.
+	// Increasing this improves throughput for high-volume APIs.
 	MaxIdleConnections int
 
-	// ConnectionTimeout defines how long to wait when establishing a TCP connection.
-	// A value of 0 disables the timeout and uses Go's default behavior.
+	// ConnectionTimeout defines the timeout for establishing new TCP connections.
+	// A value of 0 disables the timeout and uses default system behavior.
 	ConnectionTimeout time.Duration
 
-	// RequestTimeout defines the maximum allowed duration for the entire request,
-	// including connection establishment, redirects, and reading the response body.
-	// A value of 0 disables the timeout.
+	// RequestTimeout sets a maximum duration for the full request, including
+	// connecting, redirects, and reading the response body. A value of 0
+	// disables the timeout entirely.
 	RequestTimeout time.Duration
 }
 
-// New creates and returns a new httpx client using the provided Config.
-// Missing settings are populated using library defaults.
+// New constructs and returns a new httpx client.
+// Missing or zero-valued configuration fields are replaced by defaults.
 //
-//	If cfg is nil, all default values will be used.
+// When cfg is nil, all defaults are applied.
 func New(cfg *Config) Client {
-	// Load default configuration
+
+	// Apply default settings
 	defaults := &Config{
 		MaxIdleConnections: 5,
 		ConnectionTimeout:  0,
@@ -48,7 +59,7 @@ func New(cfg *Config) Client {
 		Headers:            make(http.Header),
 	}
 
-	// Override defaults with user-provided configuration
+	// Override defaults with user config
 	if cfg != nil {
 		if cfg.MaxIdleConnections != 0 {
 			defaults.MaxIdleConnections = cfg.MaxIdleConnections
@@ -64,58 +75,64 @@ func New(cfg *Config) Client {
 		}
 	}
 
-	// Construct the underlying http.Client with timeouts and custom transport.
-	return &client{
-		httpClient: &http.Client{
-			// Total request timeout
-			Timeout: defaults.RequestTimeout,
+	// Build the underlying http.Client
+	httpClient := &http.Client{
+		Timeout: defaults.RequestTimeout, // total request timeout
 
-			Transport: &http.Transport{
-				// Number of idle connections kept per host
-				MaxIdleConnsPerHost: defaults.MaxIdleConnections,
+		Transport: &http.Transport{
+			MaxIdleConnsPerHost:   defaults.MaxIdleConnections,
+			ResponseHeaderTimeout: defaults.RequestTimeout,
 
-				// Timeout for waiting on response headers
-				ResponseHeaderTimeout: defaults.RequestTimeout,
-
-				// Dialer with connection timeout
-				DialContext: (&net.Dialer{
-					Timeout: defaults.ConnectionTimeout,
-				}).DialContext,
-			},
+			// TCP dialer configuration
+			DialContext: (&net.Dialer{
+				Timeout: defaults.ConnectionTimeout,
+			}).DialContext,
 		},
+	}
 
-		// Store final configuration on the client instance
-		Config: *defaults,
+	return &client{
+		httpClient: httpClient,
+		Config:     *defaults,
 	}
 }
 
-// Get performs an HTTP GET request to the given URL with optional headers
-// and query parameters. GET requests cannot contain a request body.
-func (c *client) Get(url string, headers http.Header, params map[string]string) (*http.Response, error) {
-	return c.do(http.MethodGet, url, headers, params, nil)
+// Get performs an HTTP GET request.
+// Optional per-request settings can be applied using Option functions.
+//
+// Example:
+//
+//	res, err := client.Get("https://api.com/items",
+//	    httpx.WithParams(map[string]string{"limit": "10"}))
+func (c *client) Get(url string, opts ...Option) (*http.Response, error) {
+	return c.do(http.MethodGet, url, buildOptions(opts))
 }
 
-// Post performs an HTTP POST request using optional headers, query parameters,
-// and a request body. The Content-Type determines how the body is encoded.
-func (c *client) Post(url string, headers http.Header, params map[string]string, body any) (*http.Response, error) {
-	return c.do(http.MethodPost, url, headers, params, body)
+// Post performs an HTTP POST request.
+// Body encoding is based on Content-Type (JSON, XML, form, multipart, etc.)
+//
+// Example:
+//
+//	res, err := client.Post("https://api.com/users",
+//	    httpx.WithJSON(user))
+func (c *client) Post(url string, opts ...Option) (*http.Response, error) {
+	return c.do(http.MethodPost, url, buildOptions(opts))
 }
 
-// Put performs an HTTP PUT request using optional headers, query parameters,
-// and a request body. PUT is typically used for full resource replacement.
-func (c *client) Put(url string, headers http.Header, params map[string]string, body any) (*http.Response, error) {
-	return c.do(http.MethodPut, url, headers, params, body)
+// Put performs an HTTP PUT request.
+// Typically used for complete resource replacement.
+func (c *client) Put(url string, opts ...Option) (*http.Response, error) {
+	return c.do(http.MethodPut, url, buildOptions(opts))
 }
 
-// Patch performs an HTTP PATCH request using optional headers, query parameters,
-// and a request body. PATCH is typically used for partial resource updates.
-func (c *client) Patch(url string, headers http.Header, params map[string]string, body any) (*http.Response, error) {
-	return c.do(http.MethodPatch, url, headers, params, body)
+// Patch performs an HTTP PATCH request.
+// Typically used for partial resource updates.
+func (c *client) Patch(url string, opts ...Option) (*http.Response, error) {
+	return c.do(http.MethodPatch, url, buildOptions(opts))
 }
 
-// Delete performs an HTTP DELETE request with optional headers and query parameters.
-// DELETE requests may include a body depending on the API, but httpx does not
-// support bodies for DELETE calls to avoid inconsistent server behavior.
-func (c *client) Delete(url string, headers http.Header, params map[string]string) (*http.Response, error) {
-	return c.do(http.MethodDelete, url, headers, params, nil)
+// Delete performs an HTTP DELETE request.
+// DELETE bodies are intentionally not supported to avoid inconsistent behavior
+// across HTTP servers.
+func (c *client) Delete(url string, opts ...Option) (*http.Response, error) {
+	return c.do(http.MethodDelete, url, buildOptions(opts))
 }
