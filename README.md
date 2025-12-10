@@ -1,5 +1,5 @@
 # httpx - A lightweight, minimalistic HTTP client for Go
-![Hero Image](./artifacts/general/img/stage.png)
+![Hero Image](./artifacts/general/img/hero.png)
 
 A lightweight **minimalistic HTTP client** written in Go.  
 `httpx` provides a clean, minimalistic wrapper around Go's native `net/http` package—
