@@ -4,48 +4,66 @@ import (
 	"net/http"
 )
 
-// Client defines the public interface for performing HTTP requests using httpx.
-// It provides a simplified, Axios-like API built on top of Go's net/http package,
-// supporting custom headers, query parameters, and automatic request body encoding.
+// Client defines the public-facing interface for the httpx HTTP client.
 //
-// All methods return the raw *http.Response object, allowing callers to decide
-// whether to use the provided response helpers (JSON, XML, Text, Bytes) or to
-// read and handle the body manually.
+// It provides a clean, Axios-style API while staying fully compatible with Go's
+// native net/http primitives. All request methods support optional request
+// configuration through functional options (Option), allowing callers to set
+// per-request headers, query parameters, and request bodies.
+//
+// Each method returns the raw *http.Response object, giving callers full control
+// over streaming, manual decoding, or using the response helpers provided by
+// httpx (JSON, XML, Text, Bytes).
 type Client interface {
 
-	// Get sends an HTTP GET request to the specified URL.
+	// Get performs an HTTP GET request to the given URL.
 	//
-	// Headers: optional per-request headers; they override global headers.
-	// Params:  optional query parameters appended to the URL.
+	// GET requests cannot include a request body. Optional behavior such as
+	// query parameters or additional headers can be configured via Option.
 	//
-	// GET requests cannot contain a body.
-	Get(url string, headers http.Header, params map[string]string) (*http.Response, error)
+	// Example:
+	//    res, err := client.Get("https://api.com/users",
+	//        httpx.WithParams(map[string]string{"limit": "10"}),
+	//        httpx.WithHeaders(http.Header{"Accept": []string{"application/json"}}),
+	//    )
+	Get(url string, opts ...Option) (*http.Response, error)
 
-	// Post sends an HTTP POST request to the specified URL.
+	// Post performs an HTTP POST request using optional headers, query parameters,
+	// and a request body. Body encoding is determined automatically based on the
+	// Content-Type header (JSON, XML, x-www-form-urlencoded, multipart/form-data, etc.).
 	//
-	// Headers: optional per-request headers; Content-Type determines encoding.
-	// Params:  optional query parameters appended to the URL.
-	// Body:    request payload; encoded based on Content-Type (JSON, XML, form, multipart, etc.).
-	Post(url string, headers http.Header, params map[string]string, body any) (*http.Response, error)
+	// Example:
+	//    res, err := client.Post("https://api.com/users",
+	//        httpx.WithBody(user),
+	//        httpx.WithHeaders(http.Header{"Content-Type": []string{"application/json"}}),
+	//    )
+	Post(url string, opts ...Option) (*http.Response, error)
 
-	// Put sends an HTTP PUT request to the specified URL.
+	// Put performs an HTTP PUT request and supports optional headers, parameters,
+	// and a body. PUT is generally used for full resource replacement.
 	//
-	// PUT typically performs a full resource replacement.
-	// Encoding behavior is identical to Post().
-	Put(url string, headers http.Header, params map[string]string, body any) (*http.Response, error)
+	// Example:
+	//    res, err := client.Put("https://api.com/users/1",
+	//        httpx.WithBody(updatedUser),
+	//    )
+	Put(url string, opts ...Option) (*http.Response, error)
 
-	// Patch sends an HTTP PATCH request to the specified URL.
+	// Patch performs an HTTP PATCH request with optional headers, parameters,
+	// and a body. PATCH is typically used for partial updates.
 	//
-	// PATCH typically performs a partial resource update.
-	// Encoding behavior is identical to Post().
-	Patch(url string, headers http.Header, params map[string]string, body any) (*http.Response, error)
+	// Example:
+	//    res, err := client.Patch("https://api.com/users/1",
+	//        httpx.WithBody(map[string]any{"lastname": "Updated"}),
+	//    )
+	Patch(url string, opts ...Option) (*http.Response, error)
 
-	// Delete sends an HTTP DELETE request to the specified URL.
+	// Delete performs an HTTP DELETE request. It supports optional headers and
+	// query parameters but does not allow request bodies in httpx to avoid
+	// inconsistent behavior across HTTP servers.
 	//
-	// Headers: optional per-request headers.
-	// Params:  optional query parameters appended to the URL.
-	//
-	// DELETE requests do not accept a body in httpx for consistency and
-	// to avoid differing server behavior across APIs.
-	Delete(url string, headers http.Header, params map[string]string) (*http.Response, error)
+	// Example:
+	//    res, err := client.Delete("https://api.com/users/1",
+	//        httpx.WithParams(map[string]string{"force": "true"}),
+	//    )
+	Delete(url string, opts ...Option) (*http.Response, error)
 }
